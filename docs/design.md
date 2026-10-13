@@ -148,7 +148,7 @@ writer 的 `inspectWorktree` 是新增非同步快照入口；`createPresenceFil
 | `tool_call` | writer-lock | 無 I/O、提示或寫入 gate |
 | `tool_call` | **hard-deny** | 硬擋絕不該發生的命令與寫入（含 shell 重導向目標解析） |
 | `tool_call` | subagent-policy | 檢查 `subagent` 派發參數 |
-| `tool_result` | subagent-policy | 記錄 `{action:"list", capabilities:true}` 已完成 |
+| `tool_result` | subagent-policy | 記錄 `action:"list"` 且 `capabilities:true`（頂層或 `options`）已完成 |
 | `tool_result` | git-evidence | 偵測成功的 commit／push，附加驗證證據 |
 | `tool_result` | completion-diff-recheck | 記錄成功寫入與原始 porcelain 觀察，先於 evidence await／append |
 | `agent_settled` | completion-diff-recheck | eligibility → collect → 單次同步 finish → 顯示／可選跟進 |
@@ -298,11 +298,15 @@ function decideHardDeny(
 
 **目的**：擋掉三類明確違規的 subagent 派發。判定完全基於呼叫參數與 session 事實，零語意推測。
 
+**輸入形狀**：pi-subagents 0.77.0 起，model-facing `subagent` schema 只把 `agent`／`task`／`workflow`／`args`／`async`／`model`／`cwd`／`worktree`／`output`／`action`／`id`／`message` 放在頂層，其餘欄位（含 `capabilities`、`context`、`acceptance`）收在單一 `options` 物件；RPC／slash／workflow caller 與舊 session 仍送扁平形狀。`normalizeSubagentInput(input)` 是唯一的形狀解讀點：單層展開 `options` 到頂層、`options` 覆寫同名欄位，但值為 `undefined` 的 `options` 鍵被丟棄（避免遮蔽頂層值），非物件 `options` 視為沒有 options。`decideSubagentCall` 在入口套用後，三條規則與 `handleToolResult` 的事實觀測都只讀這個視圖。
+
 **判定核心（純函式）**：
 
 ```ts
+function normalizeSubagentInput(input: Record<string, unknown>): Record<string, unknown>; // 唯一形狀解讀點
+
 function decideSubagentCall(
-  input: Record<string, unknown>,           // subagent tool 的 input
+  input: Record<string, unknown>,           // subagent tool 的原始 input（頂層或 options）
   facts: { capabilitiesListed: boolean },   // session 事實
   opts: {
     weakModelPatterns: string[];            // 預設 ["haiku","mini","flash","lite","small"]
@@ -315,18 +319,19 @@ function decideSubagentCall(
 
 **三條規則**：
 
-1. **`:88` 派發前置檢查** —— 若為**執行型**呼叫（含 `agent`／`workflowScript`／`workflowScriptPath`／`workflow` 且**不含** `action`）且 `facts.capabilitiesListed === false` → block，reason 指示先跑 `{action:"list", capabilities:true}`。
+1. **`:88` 派發前置檢查** —— 若為**執行型**呼叫（含 `agent`／`workflowScript`／`workflowScriptPath`／`workflow` 且**不含** `action`）且 `facts.capabilitiesListed === false` → block，reason 指示先跑 `{action:"list", capabilities:true}`（`capabilities` 可放頂層或 `options`）。
    - `action` 型呼叫（管理／控制）全部放行，不受此規則約束。
-   - `facts.capabilitiesListed` 由 `tool_result` 觀察：`toolName === "subagent"`、`input.action === "list"`、`input.capabilities === true`、`isError !== true`。
+   - `facts.capabilitiesListed` 由 `tool_result` 觀察：`toolName === "subagent"`、正規化視圖的 `action === "list"` 且 `capabilities === true`（即頂層或 `options.capabilities`）、`isError !== true`。
    - **在 subagent child session 中停用此規則**（`facts.isSubagentChild === true`）。理由：child 的 agent 選擇已由 parent 的 brief 決定，要求 child 再自行 list 一次沒有下游消費者，只會造成摩擦。規則 2、3 是純參數檢查、無 session 事實依賴，在 child 中**仍然啟用**。
 2. **`:91` 高風險不得降級** —— 若 `agent` 名稱或 `task` 命中 `reviewIntentPatterns`，且 `model` 命中 `weakModelPatterns` → block。
-3. **`:92` external runner 不吃 native options** —— 若 `agent` ∈ `externalCliAgents`，且 input 含任一 `nativeOnlyOptions` → block，reason 列出違規欄位名。
+3. **`:92` external runner 不吃 native options** —— 若 `agent` ∈ `externalCliAgents`，且正規化視圖（頂層或 `options`）含任一 `nativeOnlyOptions` → block，reason 列出違規欄位名。
 
 **必須自建 `tool_call` 攔截（已驗證的限制，非設計選擇）**：`@gotgenes/pi-permission-system` 的 authorizer link 收到的 `PromptPermissionDetails`（`src/authority/permission-prompter.ts:48`）與 `PromptPayload`（`src/presentation/prompt-payload.ts:49`）**不含原始 tool input** —— 只有 `toolName`、`value`（command／path／MCP target／skill name）、`matchedPattern` 等顯示層事實，以及可截斷的 `toolInputPreview`。本模組要檢查的是 `input.agent`／`input.model`／`input.acceptance`／`input.action` 等欄位，因此無法透過該 seam 實作。詳見 `docs/pi-permission-system-evaluation.md` §5.2。
 
 **誤判防護**：
 - 規則 2 只在**明確指定了 `model`** 時觸發（未指定 → 用 agent 預設 → 不干涉）
 - 規則 3 逐欄位列出，讓 agent 知道要移除哪些
+- 形狀正規化只展開單層 `options`，且丟棄值為 `undefined` 的鍵；`options` 不能遮蔽頂層的 native-only 選項
 - 三個 pattern 清單皆可由 config 覆寫（`weakModelPatterns` 等）
 
 **測試案例**：每條規則各有「觸發→擋下」與「合法變體→放行」；`action:"list"` 放行；先 list 再派發放行；review 但未指定 model 放行；external agent 不帶 native options 放行。

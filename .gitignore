@@ -28,3 +28,6 @@ id_ed25519.*
 
 # Agent execution artifacts are not project documentation.
 .pi/subagents/
+
+# Session-local scope-ledger files are not repo content.
+*.local.md

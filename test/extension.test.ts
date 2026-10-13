@@ -584,6 +584,30 @@ describe("extension: actual registered hooks", () => {
 		},
 	);
 
+	it.each([false, true])(
+		"a capability listing nested in options unlocks dispatch (isError=%s)",
+		async (isError) => {
+			expect(await h.fire(dispatch)).toMatchObject({ block: true });
+			await h.fire(
+				result(
+					"subagent",
+					{ action: "list", options: { capabilities: true } },
+					"listed",
+					isError,
+				),
+			);
+			const outcome = await h.fire(dispatch);
+			if (isError) expect(outcome).toMatchObject({ block: true });
+			else expect(outcome).toBeUndefined();
+		},
+	);
+
+	it("does not unlock on a nested listing without capabilities", async () => {
+		expect(await h.fire(dispatch)).toMatchObject({ block: true });
+		await h.fire(result("subagent", { action: "list", options: {} }, "listed"));
+		expect(await h.fire(dispatch)).toMatchObject({ block: true });
+	});
+
 	it.each([undefined, new AbortController().signal])(
 		"preserves output and propagates signal %s for commit evidence",
 		async (signal) => {
