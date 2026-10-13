@@ -7,7 +7,10 @@ import {
 import { registerAgentsGuard } from "./extension.js";
 import { inspectWorktree } from "./lib/git.js";
 import { decideHardDeny } from "./modules/hard-deny.js";
-import { decideSubagentCall } from "./modules/subagent-policy.js";
+import {
+	decideSubagentCall,
+	normalizeSubagentInput,
+} from "./modules/subagent-policy.js";
 import { createCompletionController } from "./runtime/completion-diff-recheck.js";
 import type { Runtime, RuntimeDeps } from "./runtime/contracts.js";
 import { createGitEvidenceCoordinator } from "./runtime/git-evidence.js";
@@ -188,13 +191,13 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
 			return { kind: "pass" };
 		},
 		handleToolResult(toolName, input, isError, content) {
-			if (
-				toolName === "subagent" &&
-				!isError &&
-				input.action === "list" &&
-				input.capabilities === true
-			) {
-				capabilitiesListed = true;
+			if (toolName === "subagent" && !isError) {
+				// pi-subagents >=0.77 puts `capabilities` under `options`; the flat
+				// shape still arrives from older sessions and RPC callers.
+				const view = normalizeSubagentInput(input);
+				if (view.action === "list" && view.capabilities === true) {
+					capabilitiesListed = true;
+				}
 			}
 			completion.observeToolResult(toolName, input, isError, content);
 		},

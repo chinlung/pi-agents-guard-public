@@ -121,13 +121,13 @@ pi -e "$PWD/src/index.ts"
 
 ## `subagent-policy` 的三條規則
 
-對 `subagent` 工具呼叫做純參數判定，零語意推測。三條規則依序評估，第一個命中即擋下：
+對 `subagent` 工具呼叫做純參數判定，零語意推測。pi-subagents 0.77 起把非頂層參數收在單一 `options` 物件；本模組先把 `options` 與舊扁平形狀正規化成同一視圖再判定。三條規則依序評估，第一個命中即擋下：
 
-**1. 派發前置檢查（`:88`）** — 執行型呼叫（含 `agent`／`workflowScript`／`workflowScriptPath`／`workflow`，且不含 `action`）在本 session 觀察到 `{action:"list", capabilities:true}` 成功回應之前一律擋下。管理／控制呼叫（含 `action`）不受此規則約束。**在 subagent child session 中停用**（`PI_SUBAGENT_CHILD=1`）——child 的 agent 已由 parent 的 brief 決定，要求它自行 list 一次沒有下游消費者。
+**1. 派發前置檢查（`:88`）** — 執行型呼叫（含 `agent`／`workflowScript`／`workflowScriptPath`／`workflow`，且不含 `action`）在本 session 觀察到 `{action:"list", capabilities:true}` 成功回應之前一律擋下；`capabilities` 放頂層或 `options` 皆可。管理／控制呼叫（含 `action`）不受此規則約束。**在 subagent child session 中停用**（`PI_SUBAGENT_CHILD=1`）——child 的 agent 已由 parent 的 brief 決定，要求它自行 list 一次沒有下游消費者。
 
 **2. 高風險不得降級（`:91`）** — `agent` 或 `task` 命中 review/audit/security/threat 類 pattern，且明確指定了 `model` 並命中弱模型 pattern（`haiku`／`mini`／`flash`／`lite`／`small`），才會擋下。未指定 `model` 表示使用 agent 預設，不算降級。
 
-**3. native-only 選項不套用外部 runner（`:92`）** — `agent` ∈ `codex-exec(-writer)`／`claude-code(-writer)`／`cursor-agent(-writer)`，且 input 含 `model`／`context`／`acceptance`／`outputSchema`／`toolBudget`／`fast`／`skill`／`mission` 任一鍵即擋下，reason 列出全部違規欄位。
+**3. native-only 選項不套用外部 runner（`:92`）** — `agent` ∈ `codex-exec(-writer)`／`claude-code(-writer)`／`cursor-agent(-writer)`，且呼叫參數（頂層或 `options`）含 `model`／`context`／`acceptance`／`outputSchema`／`toolBudget`／`fast`／`skill`／`mission` 任一鍵即擋下，reason 列出全部違規欄位。
 
 四個 pattern／選項清單 `weakModelPatterns`、`externalCliAgents`、`nativeOnlyOptions`、`reviewIntentPatterns` 皆可由 `config.json` 覆寫。它們與 `hard-deny` 的 `commands`／`protectedPaths` 一樣是**整份替換**；縮短任一清單會減少檢查覆蓋。請從當前 [`src/config.ts`](src/config.ts) 核對完整預設，再針對明確需求調整，不貼上局部清單當作安全預設。
 

@@ -201,10 +201,10 @@ AGENTS_GUARD='{"modules":{"git-evidence":{"checkCi":false}}}' pi
 先使用 `subagent` 工具做真正的能力查詢：
 
 ```json
-{"action":"list","capabilities":true}
+{"action":"list","options":{"capabilities":true}}
 ```
 
-成功後才派發。管理呼叫含 `action`；執行呼叫使用 `agent`／`workflowScript`／`workflowScriptPath`／`workflow`，不混用 action。這只是 agents-guard 的前置條件；模型選型、runner preflight、one writer、fresh context 等仍按 pi-subagents 的實際 contract 執行。
+`capabilities` 放頂層的舊扁平形狀仍相容；pi-subagents 0.77 起的 model-facing schema 以 `options` 為準。成功後才派發。管理呼叫含 `action`；執行呼叫使用 `agent`／`workflowScript`／`workflowScriptPath`／`workflow`，不混用 action。這只是 agents-guard 的前置條件；模型選型、runner preflight、one writer、fresh context 等仍按 pi-subagents 的實際 contract 執行。
 
 **pi-guard 1.4.0 在已載入啟用、規則匹配的無 UI child：**
 
